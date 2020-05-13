@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-sidecar-config
+data:
+  filebeat.yml: |
+    filebeat:
+      config:
+        modules:
+          path: /usr/share/filebeat/modules.d/*.yml
+          reload:
+            enabled: true
+      modules:
+      - module: apache
+        access:
+          enabled: true
+          var.paths:
+          - "/usr/local/tomcat/logs/localhost_access_log.*.txt"
+        error:
+          enabled: true
+          var.paths:
+          - "/usr/local/tomcat/logs/application.log*"
+          - "/usr/local/tomcat/logs/catalina.*.log"
+          - "/usr/local/tomcat/logs/host-manager.*.log"
+          - "/usr/local/tomcat/logs/localhost.*.log"
+          - "/usr/local/tomcat/logs/manager.*.log"
+    logging:
+      metrics:
+        enabled: false
+    output:
+      console:
+        enabled: true
+        pretty: true
+        codec.format:
+          string: '%{[message]}'
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tomcatlogs
+spec:
+  initContainers:
+  - image: dockerpac/tomcatsample:latest 
+    name: webapps
+    imagePullPolicy: Always
+    command:
+      - "cp"
+      - "-r"
+      - "/usr/local/tomcat/webapps/sample.war"
+      - "/webapps/"
+    volumeMounts:
+    - mountPath: /webapps
+      name: webapps
+  containers:
+  - name: filebeat-sidecar
+    image: docker.elastic.co/beats/filebeat:7.5.0
+    env:
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+           apiVersion: v1
+           fieldPath: spec.nodeName
+    volumeMounts:
+    - name: logs
+      mountPath: /usr/local/tomcat/logs
+    - name: filebeat-config
+      mountPath: /usr/share/filebeat/filebeat.yml
+      subPath: filebeat.yml
+  - name: tomcat
+    image: dockerpac/tomcatsample:latest
+    imagePullPolicy: Always
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    resources:
+      requests:
+        ephemeral-storage: "100Mi"
+      limits:
+        ephemeral-storage: "100Mi"
+    volumeMounts:
+    - name: webapps
+      mountPath: /usr/local/tomcat/webapps
+    - name: work
+      mountPath: /usr/local/tomcat/work
+    - name: logs
+      mountPath: /usr/local/tomcat/logs
+  volumes:
+  - name: webapps
+    emptyDir: {}
+  - name: work
+    emptyDir: {}
+  - name: logs
+    emptyDir: {}
+  - name: conf
+    emptyDir: {}
+  - name: filebeat-config
+    configMap:
+      name: filebeat-sidecar-config
+      items:
+      - key: filebeat.yml
+        path: filebeat.yml
+      

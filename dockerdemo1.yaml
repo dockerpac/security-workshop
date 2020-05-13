@@ -1,0 +1,52 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: dockerdemo1
+  labels:
+    app: dockerdemo1
+spec:
+  selector:
+    app: dockerdemo1
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dockerdemo1
+  labels:
+    app: dockerdemo1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dockerdemo1
+  template:
+    metadata:
+      labels:
+        app: dockerdemo1
+    spec:
+      containers:
+      - image: ehazlett/docker-demo:latest
+        name: docker-demo-container
+        ports:
+        - containerPort: 8080
+---
+
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: dockerdemo1
+  labels:
+    app: dockerdemo1
+spec:
+  rules:
+  - host: dockerdemo1.k8s.pac2.demo-azure-cs.mirantis.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: dockerdemo1
+          servicePort: 8080

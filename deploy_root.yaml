@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-root
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deploy-root
+  template:
+    metadata:
+      labels:
+        app: deploy-root
+    spec:
+      containers:
+      - name: alpine
+        image: dockerpac/alpine:root
+        command: [ "/bin/sh", "-c", "sleep 3600" ]
+        imagePullPolicy: Always

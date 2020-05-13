@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: run2000
+spec:
+  containers:
+  - name: alpine
+    image: dockerpac/alpine:root
+    command: [ "/bin/sh", "-c", "sleep 3600" ]
+    imagePullPolicy: Always
+    volumeMounts:
+    - name: demo
+      mountPath: /demo
+  securityContext:
+    runAsUser: 2000
+    fsGroup: 5000
+  volumes:
+    - name: demo
+      persistentVolumeClaim:
+        claimName: pvc-disk

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: registry-dockerdemo-regcred
+spec:
+  containers:
+  - name: dockerdemo
+    image: dtr.pac2.demo-azure-cs.mirantis.com/admin/dockerdemo:latest
+    imagePullPolicy: Always
+  imagePullSecrets:
+  - name: regcred

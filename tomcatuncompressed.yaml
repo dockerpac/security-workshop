@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tomcatuncompressed
+spec:
+  containers:
+  - name: tomcat
+    image: dockerpac/tomcatsample:uncompressed
+    imagePullPolicy: Always
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    volumeMounts:
+    - name: work
+      mountPath: /usr/local/tomcat/work
+    - name: logs
+      mountPath: /usr/local/tomcat/logs
+  volumes:
+  - name: work
+    emptyDir: {}
+  - name: logs
+    emptyDir: {}

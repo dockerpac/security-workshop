@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tomcatrw
+spec:
+  containers:
+  - name: tomcat
+    image: dockerpac/tomcatsample:latest
+    imagePullPolicy: Always
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false

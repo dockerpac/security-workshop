@@ -1,0 +1,12 @@
+FROM tomcat:8.0-alpine
+RUN addgroup -g 1000 -S appgroup && adduser -u 1000 -S appuser -G appgroup
+ADD sample.war /tmp
+RUN rm -rf /usr/local/tomcat/webapps/* \
+ && mkdir /usr/local/tomcat/webapps/sample \
+ && cd /usr/local/tomcat/webapps/sample \
+ && unzip /tmp/sample.war \
+ && rm -f /tmp/sample.war \
+ && chown -R appuser:appgroup /usr/local/tomcat/webapps/
+USER 1000
+EXPOSE 8080
+CMD ["catalina.sh", "run"]

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: preventroot
+spec:
+  containers:
+  - name: alpine
+    image: dockerpac/alpine:root
+    command: [ "/bin/sh", "-c", "sleep 3600" ]
+    imagePullPolicy: Always
+    securityContext:
+      runAsNonRoot: true

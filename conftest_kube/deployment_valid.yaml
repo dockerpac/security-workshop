@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-kubernetes
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/version: "5.7.21"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: wordpress
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/instance: mysql
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hello-kubernetes
+      release: 1
+  template:
+    metadata:
+      labels:
+        app: hello-kubernetes
+        release: 1
+    spec:
+      containers:
+      - name: hello-kubernetes
+        image: paulbouwer/hello-kubernetes:1.5
+        ports:
+        - containerPort: 8080
+      securityContext:
+        runAsNonRoot: true
