@@ -4,6 +4,7 @@ docker build -t dockerpac/alpine:notrootnotuid -f Dockerfile.alpinenotrootnotuid
 docker build -t dockerpac/alpine:notroot -f Dockerfile.alpinenotroot . && docker push dockerpac/alpine:notroot
 docker build -t dockerpac/tomcatsample:latest -f Dockerfile.tomcat . && docker push dockerpac/tomcatsample:latest
 docker build -t dockerpac/tomcatsample:uncompressed -f Dockerfile.tomcatuncompressed . && docker push dockerpac/tomcatsample:uncompressed
+
 # Preparation
 cd ~/Dev/security
 kubectl create namespace security
@@ -155,6 +156,9 @@ kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "regcred
 # Revert
 kubectl delete serviceaccount default
 
+# Note about using ImagePullPolicy: Always
+# (from K8S documentation) Note: The caching semantics of the underlying image provider make even imagePullPolicy: Always efficient. With Docker, for example, if the image already exists, the pull attempt is fast because all image layers are cached and no image download is needed.
+
 # ######################################
 # POD SECURITY POLICY
 # ######################################
@@ -279,25 +283,27 @@ kubectl apply -f dockerdemo1.yaml -f dockerdemo2.yaml
 
 # Check appli using browser
 # Check appli internally
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- curl http://dockerdemo2:8080
+kubectl  exec -it deploy/dockerdemo1 -- curl http://dockerdemo2:8080
 # Check from other namespace
 kubectl -n default apply -f root.yaml
-kubectl -n default exec -it root -- wget https://dockerdemo2.security:8080
+kubectl -n default exec -it root -- apk add curl
+kubectl -n default exec -it root -- curl  http://dockerdemo2:8080
+kubectl -n default exec -it root -- curl http://dockerdemo2.security:8080
 
 # default np deny all ingress
 kubectl apply -f np-deny-ingress.yaml
 
 # Check appli internally
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- curl http://dockerdemo2:8080
+kubectl  exec -it deploy/dockerdemo1 -- curl http://dockerdemo2:8080
 
 # Check external connectivity
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- ping www.google.fr
+kubectl  exec -it deploy/dockerdemo1 -- ping www.google.fr
 
 # default np allow in namespace
-kubectl apply -f apply -f np-allow-ns.yaml
+kubectl apply -f np-allow-ns.yaml
 
 # Check from same namespace
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- curl http://dockerdemo2:8080
+kubectl  exec -it deploy/dockerdemo1 -- curl http://dockerdemo2:8080
 
 # Check from other namespace
 kubectl -n default exec -it root -- wget https://dockerdemo2.security:8080
@@ -311,14 +317,31 @@ kubectl edit namespace ingress-nginx
 # Deny all egress traffic
 kubectl apply -f np-deny-egress.yaml
 
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- ping www.google.fr
-kubectl  exec -it dockerdemo1-7c66cf67bc-qw6xv -- curl http://dockerdemo2:8080
+kubectl  exec -it deploy/dockerdemo1 -- ping www.google.fr
+kubectl  exec -it deploy/dockerdemo1 -- curl http://dockerdemo2:8080
 
 # Allow egress in same namespace
 kubectl apply -f np-allow-ns-egress.yaml
+kubectl  exec -it deploy/dockerdemo1 -- curl http://dockerdemo2:8080
 
 # Allow dns
 kubectl apply -f np-allow-egress-dns.yaml
+
+# Kubernetes NetworkPolicy
+ # policies are limited to an environment;
+ # policies are applied to pods marked with labels;
+ # you can apply rules to pods, environments or subnets;
+ # the rules may contain protocols, numerical or named ports.
+
+# Calico NetworkPolicy
+# policies can be applied to any object: pod, container, virtual machine or interface;
+# the rules can contain the specific action (restriction, permission, logging);
+# you can use ports, port ranges, protocols, HTTP/ICMP attributes, IPs or subnets (v4 and v6), any selectors (selectors for nodes, hosts, environments) as a source or a target of the rules;
+# also, you can control traffic flows via DNAT settings and policies for traffic forwarding.
+
+
+# CLEANUP
+kubectl delete networkpolicy --all
 
 # ######################################
 # RBAC
@@ -327,20 +350,207 @@ kubectl apply -f np-allow-egress-dns.yaml
 # ######################################
 # SECRETS VAULT
 # ######################################
+# https://www.vaultproject.io/docs/platform/k8s/injector
+
+# Deploy Vault
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm search repo hashicorp/vault -l
+kubectl create ns vault
+helm -n vault install vault hashicorp/vault -f vault-values.yaml
+
+
+# Check MutatingWebHook
+kubectl get mutatingwebhookconfigurations
+kubectl describe mutatingwebhookconfigurations vault-agent-injector-cfg
+
+
+# Configure Vault
+kubectl -n vault exec -it vault-0 -- /bin/sh
+
+# Create policy
+cat <<EOF > /home/vault/app-policy.hcl
+path "secret*" {
+  capabilities = ["read"]
+}
+EOF
+
+vault policy write app /home/vault/app-policy.hcl
+
+# Enable auth
+vault auth enable kubernetes
+
+vault write auth/kubernetes/config \
+   token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+   kubernetes_host=https://${KUBERNETES_PORT_443_TCP_ADDR}:443 \
+   kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+vault write auth/kubernetes/role/myapp \
+   bound_service_account_names=app \
+   bound_service_account_namespaces=demo \
+   policies=app \
+   ttl=1h
+
+# Create secret
+vault kv put secret/helloworld username=foobaruser password=foobarbazpass
+exit
+
+
+# Deploy vault demo app
+kubectl apply -f vault-app.yaml
+kubectl exec deploy/app -c app -- ls -l /vault/secrets
+kubectl delete -f vault-app.yaml 
+
+kubectl apply -f vault-app-with-secret.yaml
+# initContainer failed
+kubectl get pods
+kubectl logs deploy/app -c vault-agent-init
+
+kubectl delete -f vault-app-with-secret.yaml
+
+kubectl -n demo apply -f vault-app-with-secret.yaml
+kubectl -n demo logs deploy/app -c vault-agent-init
+kubectl -n demo logs deploy/app -c vault-agent
+kubectl -n demo logs deploy/app -c app
+
+# Deployment is not modified, only Pod
+kubectl -n demo get deploy/app -o yaml
+
+# Secrets
+kubectl -n demo exec deploy/app -c app -- ls -l /vault/secrets
+kubectl -n demo exec deploy/app -c app -- cat /vault/secrets/helloworld
+
+# Template
+kubectl -n demo apply -f vault-app-with-secret-with-template.yaml
+kubectl -n demo exec deploy/app -c app -- cat /vault/secrets/helloworld
+
+kubectl -n demo delete -f vault-app-with-secret.yaml
+
+
 
 # ######################################
 # CERT MANAGER
 # ######################################
 
-# ######################################
-# OPA / GATEKEEPER
-# ######################################
+# Installation
+kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v0.15.0/cert-manager.crds.yaml
+helm repo add jetstack https://charts.jetstack.io
+kubectl create namespace cert-manager
+helm install cert-manager --namespace cert-manager jetstack/cert-manager
+
+
+# Generate private PKI
+cd pki
+openssl genrsa -out rootCA.key 4096
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 1024 -out rootCA.crt -extensions v3_ca -config openssl-with-ca.cnf
+
+# Create Secret with rootCA
+kubectl create secret tls ca-key-pair --key pki/rootCA.key --cert pki/rootCA.crt
+
+# Create Issuer / Type CA
+kubectl apply -f issuer.yaml
+
+kubectl describe issuer ca-issuer
+
+# Create Certificate
+kubectl apply -f certificate.yaml
+kubectl get certificate,certificaterequest
+
+kubectl get secret
+
+kubectl delete certificate selfsigned-crt
+kubectl delete secret selfsigned-crt-secret
+
+
+# Automate Ingress TLS
+kubectl apply -f dockerdemo-tls.yaml
+
+kubectl get certificate,certificaterequest
+
+kubectl delete -f dockerdemo-tls.yaml
+kubectl delete secret dockerdemotls
 
 # ######################################
 # HELM CHARTS DTR
 # ######################################
 
-# Cleanup
-kubectl create clusterrolebinding ucp:all:privileged-psp-role --clusterrole=privileged-psp-role --group=system:authenticated --group=system:serviceaccounts
-# or kubectl apply -f ucp-all-privileged-psp-role.yaml
+cd helm
+docker build -t dockerpac/helm:latest .
+# PUSH
+docker run --rm -it --rm dockerpac/helm:latest
+helm repo add stable https://kubernetes-charts.storage.googleapis.com
+helm pull stable/prometheus-operator --untar
+helm chart save ./prometheus-operator dtr.pac2.demo-azure-cs.mirantis.com/admin/prometheus-operator:latest
+helm registry login dtr.pac2.demo-azure-cs.mirantis.com
+
+helm chart push dtr.pac2.demo-azure-cs.mirantis.com/admin/prometheus-operator:latest
+exit
+
+# PULL
+docker run --rm -it --rm dockerpac/helm:latest
+helm chart list
+ls
+helm chart pull dtr.pac2.demo-azure-cs.mirantis.com/admin/prometheus-operator:latest
+helm chart export dtr.pac2.demo-azure-cs.mirantis.com/admin/prometheus-operator:latest
+helm template prometheus-operator 2>/dev/null| tail -50
+
+# CLEANUP
 kubectl delete namespace security
+
+# ######################################
+# OPA / GATEKEEPER
+# ######################################
+
+# https://play.openpolicyagent.org/
+
+# Gatekeeper
+# Separation of concerns :
+# 1 team : create rego rules / Crds
+# 1 team ; apply the crds to k8S
+
+# Deploy Gatekeeper
+kubectl apply -f gatekeeper.yaml
+
+kubectl get validatingwebhookconfigurations
+kubectl get validatingwebhookconfigurations gatekeeper-validating-webhook-configuration -o yaml
+
+# Currently NO HA - failurePolicy​: ​Ignore
+
+# Install Policykit
+pip3 install policykit
+
+# Test compliance
+pk build policy/k8sallowedrepos.rego
+
+kubectl apply -f k8sallowedrepos.yaml
+kubectl get constrainttemplates
+kubectl get crds
+
+kubectl apply -f check_repo_dtr.yaml
+kubectl get k8sallowedrepos
+
+# Look for status
+kubectl describe k8sallowedrepos security-repo-is-dtr
+
+# Create wrong repo
+kubectl apply -f root.yaml
+
+# Correct
+kubectl apply -f root-dtr.yaml
+
+# Cleanup
+kubectl delete k8sallowedrepos security-repo-is-dtr
+kubectl delete constrainttemplates k8sallowedrepos
+
+
+# Rego block other DTR
+
+# Rego block replicas
+
+# Rego block labels
+
+# All ingress hostnames must be globally unique
+
+# Restrict PV name
+
+# Restrict Tolerations
+

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: root
+spec:
+  containers:
+  - name: alpine
+    image: dtr.pac2.demo-azure-cs.mirantis.com/admin/alpine:latest
+    command: [ "/bin/sh", "-c", "sleep 3600" ]
+    imagePullPolicy: Always
