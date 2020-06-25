@@ -1,3 +1,4 @@
+```sh
 # Build
 docker build -t dockerpac/alpine:root -f Dockerfile.alpineroot . && docker push dockerpac/alpine:root 
 docker build -t dockerpac/alpine:notrootnotuid -f Dockerfile.alpinenotrootnotuid . && docker push dockerpac/alpine:notrootnotuid
@@ -554,3 +555,4 @@ kubectl delete constrainttemplates k8sallowedrepos
 
 # Restrict Tolerations
 
+```
