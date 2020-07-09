@@ -507,6 +507,11 @@ kubectl delete namespace security
 # Separation of concerns :
 # 1 team : create rego rules / Crds
 # 1 team ; apply the crds to k8S
+# Centralized management of all your policies (PSP and other custom policies) in one admission controller instead of managing those disparately.
+# Shift-Left – Enforce the same policies also in the CI/CD pipeline thus implementing Policy-as-code throughout the stack.
+# Ability to maintain OPA policies in a source control repository like Git. OPA provides http APIs to dynamically manage the policies loaded.
+# Stream the policy decisions to an external logging / monitoring tool of your choice.
+# Customize the denial message as per your setup/implementation.
 
 # Deploy Gatekeeper
 kubectl apply -f gatekeeper.yaml
@@ -522,7 +527,7 @@ pip3 install policykit
 # Test compliance
 pk build policy/k8sallowedrepos.rego
 
-kubectl apply -f k8sallowedrepos.yaml
+kubectl apply -f policy/k8sallowedrepos.yaml
 kubectl get constrainttemplates
 kubectl get crds
 
@@ -538,10 +543,14 @@ kubectl apply -f root.yaml
 # Correct
 kubectl apply -f root-dtr.yaml
 
+# Change 
+
 # Cleanup
 kubectl delete k8sallowedrepos security-repo-is-dtr
 kubectl delete constrainttemplates k8sallowedrepos
 
+# Constraint Library : 
+# https://github.com/open-policy-agent/gatekeeper/tree/master/library
 
 # Rego block other DTR
 
@@ -555,4 +564,36 @@ kubectl delete constrainttemplates k8sallowedrepos
 
 # Restrict Tolerations
 
+# ######################################
+# MINIO
+# ######################################
+# Prereq
+# Default StorageClass with RWO
+# Deploy minio operator
+# https://github.com/minio/minio-operator/blob/master/README.md
+cd minio-operator/
+cd operator-deployment
+kustomize build | kubectl apply -f -
+cd ..
+
+cd examples
+# Change default storage from 1Ti to 1Gi
+kubectl -n default apply -f minioinstance.yaml
+
+# Access UI
+# Show password
+echo $(kubectl get secret minio-creds-secret -o=jsonpath='{.data.secretkey}' -n default |base64 --decode)
+
+kubectl port-forward service/minio-service 9000
+
+# Configure Minio client
+mc config host add minio http://localhost:9000 minio minio123
+mc admin info minio
+
+# Configure RBAC
+# https://docs.min.io/docs/minio-multi-user-quickstart-guide.html
+mc admin user add minio user1 password
+mc admin user add minio user2 password
+
 ```
+
