@@ -504,9 +504,7 @@ kubectl delete namespace security
 # https://play.openpolicyagent.org/
 
 # Gatekeeper
-# Separation of concerns :
-# 1 team : create rego rules / Crds
-# 1 team ; apply the crds to k8S
+
 # Centralized management of all your policies (PSP and other custom policies) in one admission controller instead of managing those disparately.
 # Shift-Left – Enforce the same policies also in the CI/CD pipeline thus implementing Policy-as-code throughout the stack.
 # Ability to maintain OPA policies in a source control repository like Git. OPA provides http APIs to dynamically manage the policies loaded.
@@ -519,7 +517,6 @@ kubectl apply -f gatekeeper.yaml
 kubectl get validatingwebhookconfigurations
 kubectl get validatingwebhookconfigurations gatekeeper-validating-webhook-configuration -o yaml
 
-# Currently NO HA - failurePolicy​: ​Ignore
 
 # Install Policykit
 pip3 install policykit
@@ -543,11 +540,25 @@ kubectl apply -f root.yaml
 # Correct
 kubectl apply -f root-dtr.yaml
 
-# Change 
+pk build policy/k8suniqueingresshost.rego
+
+kubectl apply -f policy/k8suniqueingresshost.yaml
+kubectl get constrainttemplates
+kubectl get crds
+
+ kubectl apply -f check_unique_ingress.yaml
+
+ kubectl apply -f sync.yaml
+ kubectl apply -f ingress1.yaml
+ kubectl apply -f ingress2.yaml
 
 # Cleanup
+kubectl delete k8suniqueingresshost unique-ingress-host
 kubectl delete k8sallowedrepos security-repo-is-dtr
 kubectl delete constrainttemplates k8sallowedrepos
+kubectl delete constrainttemplates k8suniqueingresshost
+kubectl delete -f gatekeeper.yaml
+
 
 # Constraint Library : 
 # https://github.com/open-policy-agent/gatekeeper/tree/master/library
@@ -582,9 +593,9 @@ kubectl -n default apply -f minioinstance.yaml
 
 # Access UI
 # Show password
-echo $(kubectl get secret minio-creds-secret -o=jsonpath='{.data.secretkey}' -n default |base64 --decode)
+echo $(kubectl -n default get secret minio-creds-secret -o=jsonpath='{.data.secretkey}' -n default |base64 --decode)
 
-kubectl port-forward service/minio-service 9000
+kubectl -n default port-forward service/minio-service 9000
 
 # Configure Minio client
 mc config host add minio http://localhost:9000 minio minio123
